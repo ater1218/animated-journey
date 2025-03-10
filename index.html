@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>座標検出くん</title>
+    <!-- OpenCV.jsの読み込み -->
     <script src="https://docs.opencv.org/4.5.2/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
@@ -12,20 +13,26 @@
 </head>
 <body>
     <h1>座標検出くん</h1>
+    <!-- 画像アップロード -->
     <input type="file" id="imageInput" accept="image/*">
+    <!-- モード選択 -->
     <select id="modeSelect">
         <option value="icon">アイコン検出</option>
         <option value="ycoord">初期位置</option>
     </select>
     <button onclick="processImage()">処理開始</button>
+    <!-- 結果表示 -->
     <div id="result"></div>
+    <!-- プレビュー表示 -->
     <canvas id="preview"></canvas>
 
     <script>
+        // OpenCV.jsが読み込まれたことを確認
         function onOpenCvReady() {
             console.log('OpenCV.js is ready');
         }
 
+        // 画像処理の開始
         function processImage() {
             const fileInput = document.getElementById('imageInput');
             const mode = document.getElementById('modeSelect').value;
@@ -55,25 +62,36 @@
             reader.readAsDataURL(file);
         }
 
+        // アイコン検出
         function detectIcon(src) {
+            // HSV変換
             const hsv = new cv.Mat();
             cv.cvtColor(src, hsv, cv.COLOR_BGR2HSV);
+
+            // マスクの作成（赤色の範囲）
             const lowerRed1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 120, 100, 0]);
             const upperRed1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [10, 255, 255, 0]);
             const lowerRed2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [160, 120, 100, 0]);
             const upperRed2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 255, 255, 0]);
+            
             const mask1 = new cv.Mat();
             const mask2 = new cv.Mat();
             cv.inRange(hsv, lowerRed1, upperRed1, mask1);
             cv.inRange(hsv, lowerRed2, upperRed2, mask2);
             const mask = new cv.Mat();
             cv.bitwise_or(mask1, mask2, mask);
+
+            // ノイズ除去
             const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
             cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
             cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
+
+            // 輪郭検出
             const contours = new cv.MatVector();
             const hierarchy = new cv.Mat();
             cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+            // 結果のフィルタリング
             const results = [];
             const minWidth = 30, maxWidth = 31, minHeight = 35, maxHeight = 40;
             for (let i = 0; i < contours.size(); i++) {
@@ -90,12 +108,16 @@
                     });
                 }
             }
+
+            // メモリ解放
             hsv.delete(); lowerRed1.delete(); upperRed1.delete(); lowerRed2.delete(); upperRed2.delete();
             mask1.delete(); mask2.delete(); mask.delete(); kernel.delete();
             contours.delete(); hierarchy.delete();
+
             return results.sort((a, b) => a.x - b.x || a.y - b.y);
         }
 
+        // Y座標分析
         function analyzeYCoord(src) {
             const TARGET_Y_COORDS = [1379, 1381, 1382, 1384, 1386, 1388, 1389, 1391, 1392, 1394, 1396, 1398, 1399, 1401, 1403, 1404, 1406, 1408, 1409, 1411, 1413, 1414, 1416, 1418, 1420, 1421, 1423, 1425, 1426, 1428, 1430, 1431, 1433, 1435, 1436, 1438, 1440, 1442, 1443, 1445, 1446, 1448, 1450, 1452, 1453, 1455, 1457, 1458, 1460, 1462, 1464, 1465, 1467, 1468, 1470, 1472, 1474, 1475, 1477, 1479, 1480, 1482, 1484, 1486, 1487, 1489, 1490, 1492, 1494, 1496, 1497, 1499, 1501, 1502, 1504, 1506, 1508, 1509, 1511, 1512, 1514, 1516, 1518, 1519, 1521, 1523, 1524, 1526, 1528, 1529];
             const X_RANGES = {
@@ -104,6 +126,7 @@
                 "3P": { start: 648, end: 655 },
                 "4P": { start: 864, end: 871 }
             };
+
             const results = {};
             for (const [player, { start, end }] of Object.entries(X_RANGES)) {
                 const roi = src.roi({ x: start, y: 1370, width: end - start + 1, height: 1550 - 1370 });
@@ -111,6 +134,7 @@
                 const bw = new cv.Mat();
                 cv.cvtColor(roi, gray, cv.COLOR_BGR2GRAY);
                 cv.threshold(gray, bw, 128, 255, cv.THRESH_BINARY);
+
                 let playerResult = null;
                 outer: for (let x = 0; x < bw.cols; x++) {
                     let whiteCount = 0, blackCount = 0;
@@ -137,15 +161,17 @@
                     }
                 }
                 results[player] = playerResult;
+
                 roi.delete(); gray.delete(); bw.delete();
             }
             return results;
         }
 
+        // 結果の表示
         function displayResult(result) {
             const resultDiv = document.getElementById('result');
             let text = '';
-            if (Array.isArray(result)) {
+            if (Array.isArray(result)) { // アイコン検出
                 text += '検出結果:\n';
                 if (result.length > 0) {
                     result.forEach((r, i) => {
@@ -154,7 +180,7 @@
                 } else {
                     text += '指定されたサイズ範囲のアイコンが検出されませんでした\n';
                 }
-            } else {
+            } else { // Y座標分析
                 text += 'Y座標分析結果:\n\n';
                 for (const [player, res] of Object.entries(result)) {
                     if (res) {
@@ -170,6 +196,7 @@
             resultDiv.textContent = text;
         }
 
+        // 結果の可視化
         function visualizeResult(src, result, mode) {
             const dst = src.clone();
             if (mode === 'icon') {
@@ -195,13 +222,9 @@
                     }
                 }
             }
+
+            // プレビュー用にリサイズ
             const previewHeight = Math.min(dst.rows - 350, 1380);
             const roi = dst.roi({ x: 0, y: 350, width: dst.cols, height: previewHeight });
             const zoomed = new cv.Mat();
-            cv.resize(roi, zoomed, new cv.Size(0, 0), 1.5, 1.5, cv.INTER_LINEAR);
-            cv.imshow('preview', zoomed);
-            dst.delete(); roi.delete(); zoomed.delete();
-        }
-    </script>
-</body>
-</html>
+            cv.resize(roi, zoomed, new cv.Size(
